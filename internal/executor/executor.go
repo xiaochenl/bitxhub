@@ -164,6 +164,12 @@ func registerBoltContracts() map[string]boltvm.Contract {
 			Address:  constant.AppchainMgrContractAddr.String(),
 			Contract: &contracts.AppchainManager{},
 		},
+		{
+			Enabled:  true,
+			Name:     "transaction manager service",
+			Address:  constant.TransactionMgrContractAddr.String(),
+			Contract: &contracts.TransactionManager{},
+		},
 	}
 
 	return boltvm.Register(boltContracts)
