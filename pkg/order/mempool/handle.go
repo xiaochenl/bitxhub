@@ -1,12 +1,10 @@
 package mempool
 
-import (
-	"github.com/meshplus/bitxhub-model/pb"
-)
+import "github.com/meshplus/bitxhub-model/pb"
 
 func (mp *CoreMemPool) processDirtyAccount(txs []*pb.Transaction) {
 	for _, tx := range txs {
-		account := string(tx.Extra)
+		account := tx.From.Hex()
 		accountTxs := mp.transactionStore.allTxs[account]
 
 		// if this tx is ready to commit: follow the steps:
@@ -26,8 +24,6 @@ func (mp *CoreMemPool) processDirtyAccount(txs []*pb.Transaction) {
 		// inset ready txs into priorityIndex.
 		mp.transactionStore.priorityIndex.insert(readyTxs)
 
-		//remove filterd ready txs from parkingLotIndex
-		mp.transactionStore.parkingLotIndex.remove(readyTxs)
 		// inset non-ready txs into parkingLotIndex.
 		mp.transactionStore.parkingLotIndex.insert(nonReadyTxs)
 	}

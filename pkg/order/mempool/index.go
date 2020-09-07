@@ -20,7 +20,7 @@ func (item *orderedQueueKey) Less(than btree.Item) bool {
 
 func makeKey(tx *pb.Transaction) *orderedQueueKey {
 	return &orderedQueueKey{
-		accountAddress: string(tx.Extra),
+		accountAddress: tx.From.Hex(),
 		seqNo:          uint64(tx.Nonce),
 	}
 }
