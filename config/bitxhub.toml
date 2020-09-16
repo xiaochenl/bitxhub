@@ -24,7 +24,7 @@ solo = false
   report_caller = false
   [log.module]
     p2p = "info"
-    consensus = "info"
+    consensus = "debug"
     executor = "info"
     router = "info"
     api = "info"

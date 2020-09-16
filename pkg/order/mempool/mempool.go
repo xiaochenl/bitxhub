@@ -1,77 +1,121 @@
 package mempool
 
 import (
-	"fmt"
-
-	"github.com/meshplus/bitxhub-kit/crypto"
-	"github.com/meshplus/bitxhub-kit/crypto/asym"
 	"github.com/meshplus/bitxhub-model/pb"
+	"github.com/meshplus/bitxhub/pkg/order"
+	raftproto "github.com/meshplus/bitxhub/pkg/order/etcdraft/proto"
+	"github.com/meshplus/bitxhub/pkg/storage"
 )
 
-var _ MemPool = (*CoreMemPool)(nil)
+var _ MemPool = (*mempoolImpl)(nil)
 
-const (
-	btreeDegree = 10
-)
+//go:generate mockgen -destination mock_mempool/mock_mempool.go -package mock_mempool -source types.go
+type MemPool interface {
+	// Start mempool service
+	Start() error
 
-type CoreMemPool struct {
-	transactionStore *transactionStore
+	// stop mempool service
+	Stop()
+
+	// RecvTransaction receives transaction from API.
+	RecvTransaction(tx *pb.Transaction)
+
+	// RecvForwardTxs receives transactions from other vp nodes.
+	RecvForwardTxs(txSlice *TxSlice)
+
+	UpdateLeader(uint64)
+
+	FetchTxn(lostTxnEvent *LocalMissingTxnEvent)
+
+	RecvFetchTxnRequest(fetchTxnRequest *FetchTxnRequest)
+
+	RecvFetchTxnResponse(fetchTxnResponse *FetchTxnResponse)
+
+	GetChainHeight() uint64
+
+	IncreaseChainHeight()
+
+	GetBlock(ready *raftproto.Ready) (map[uint64]string, []*pb.Transaction)
+
+	// Remove committed transactions from mempool
+	CommitTransactions(ready *raftproto.Ready)
 }
 
-func New() *CoreMemPool {
-	return &CoreMemPool{
-		transactionStore: newTransactionStore(),
-	}
+// NewMempool return the mempool instance.
+func NewMempool(config *order.Config, storage storage.Storage, batchC chan *raftproto.Ready) MemPool {
+	return newMempoolImpl(config, storage, batchC)
 }
 
-func (mp *CoreMemPool) RecvTransactions(txs []*pb.Transaction) error {
-	for _, tx := range txs {
-		// check if this tx signature is valid first
-		ok, _ := asym.Verify(crypto.Secp256k1, tx.Signature, tx.SignHash().Bytes(), tx.From)
-		if !ok {
-			return fmt.Errorf("invalid signature")
-		}
-
-		// check the sequence number of tx
-		account := tx.From.Hex()
-		currentSeqNo := mp.transactionStore.getPendingNonce(account)
-		if uint64(tx.Nonce) <= currentSeqNo {
-			return fmt.Errorf("current sequence number is %d, required %d", tx.Nonce, currentSeqNo+1)
-		}
-
-		// check the existence of hash of this tx
-		if ok := mp.transactionStore.txHashMap[tx.TransactionHash.Hex()]; ok {
-			return fmt.Errorf("tx already received")
-		}
-		mp.transactionStore.txHashMap[tx.TransactionHash.Hex()] = true
-
-		accountTxs, ok := mp.transactionStore.allTxs[account]
-		if !ok {
-			// if this is new account to send tx, create a new txSortedMap
-			accountTxs = newTxSortedMap()
-			mp.transactionStore.allTxs[account] = accountTxs
-		}
-		accountTxs.items[uint64(tx.Nonce)] = tx
-		accountTxs.index.insert([]*pb.Transaction{tx})
+// RecvTransaction receives transaction from api and other vp nodes.
+func (mpi *mempoolImpl) RecvTransaction(tx *pb.Transaction) {
+	if mpi.txCache.IsFull() && mpi.poolIsFull() {
+		mpi.logger.Warning("Transaction cache and pool are full, we will drop this transaction.")
+		return
 	}
-	// send tx to mempool store
-	mp.processDirtyAccount(txs)
+	mpi.txCache.recvTxC <- tx
+}
+
+// RecvTransaction receives transaction from api and other vp nodes.
+func (mpi *mempoolImpl) RecvForwardTxs(txSlice *TxSlice) {
+	mpi.subscribe.txForwardC <- txSlice
+}
+
+// UpdateLeader updates the
+func (mpi *mempoolImpl) UpdateLeader(newLeader uint64) {
+	mpi.subscribe.updateLeaderC <- newLeader
+}
+
+// FetchTxn sends the fetch request.
+func (mpi *mempoolImpl) FetchTxn(lostTxnEvent *LocalMissingTxnEvent) {
+	mpi.subscribe.localMissingTxnEvent <- lostTxnEvent
+}
+
+func (mpi *mempoolImpl) RecvFetchTxnRequest(fetchTxnRequest *FetchTxnRequest) {
+	mpi.subscribe.fetchTxnRequestC <- fetchTxnRequest
+}
+
+func (mpi *mempoolImpl) RecvFetchTxnResponse(fetchTxnResponse *FetchTxnResponse) {
+	mpi.subscribe.fetchTxnResponseC <- fetchTxnResponse
+}
+
+// Start starts the mempool service.
+func (mpi *mempoolImpl) Start() error {
+	mpi.logger.Debug("Start Listen mempool events")
+	go mpi.listenEvent()
+
+
+	go mpi.txCache.listenEvent()
 	return nil
 }
 
-func (mp *CoreMemPool) GetBlock() []*pb.TransactionHash {
-	// todo: add implementation
-	return nil
+func (mpi *mempoolImpl) Stop() {
+	close(mpi.close)
+	if mpi.txCache.close != nil {
+		close(mpi.txCache.close)
+	}
 }
 
-func (mp *CoreMemPool) CommitTransactions(hashes []*pb.TransactionHash) {
-	// todo: add implementation
+func (mpi *mempoolImpl) GetChainHeight() uint64 {
+	return mpi.getBatchSeqNo()
 }
 
-func (mp *CoreMemPool) FetchMissingTransactions(MissingTransactionsHashList []*pb.Transaction) {
-	// todo: add implementation
+func (mpi *mempoolImpl) IncreaseChainHeight() {
+	mpi.increaseBatchSeqNo()
 }
 
-func (mp *CoreMemPool) RecvMissingTransactions(MissingTransactionsList []*pb.Transaction) {
-	// todo: add implementation
+func (mpi *mempoolImpl) GetBlock(ready *raftproto.Ready) (missingTxnHashList map[uint64]string, txList []*pb.Transaction) {
+	waitC := make(chan *mempoolBatch)
+	getBlock := &constructBatchEvent{
+		ready:  ready,
+		result: waitC,
+	}
+	mpi.subscribe.getBlockC <- getBlock
+	// block until finishing constructing related batch
+	batch := <-waitC
+	return batch.missingTxnHashList, batch.txList
+}
+
+// Remove committed transactions from PendingPool
+func (mpi *mempoolImpl) CommitTransactions(ready *raftproto.Ready) {
+	mpi.subscribe.commitTxnC <- ready
 }

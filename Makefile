@@ -68,3 +68,4 @@ cluster:
 	@cd scripts && bash cluster.sh
 
 .PHONY: tester build
+

@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	raftproto "github.com/meshplus/bitxhub/pkg/order/etcdraft/proto"
 	"sync"
 	"time"
 
@@ -74,15 +75,14 @@ func (n *Node) Ready() bool {
 	return true
 }
 
-func (n *Node) ReportState(height uint64, hash types.Hash) {
+func (n *Node) ReportState(ready *raftproto.Ready) {
 	if err := n.reqLookUp.Build(); err != nil {
 		n.logger.Errorf("bloom filter persistence error：", err)
 	}
 
-	if height%10 == 0 {
+	if ready.Height%10 == 0 {
 		n.logger.WithFields(logrus.Fields{
-			"height": height,
-			"hash":   hash.ShortString(),
+			"height": ready.Height,
 		}).Info("Report checkpoint")
 	}
 }

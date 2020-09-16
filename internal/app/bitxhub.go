@@ -6,8 +6,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/common-nighthawk/go-figure"
-	"github.com/ethereum/go-ethereum/common/fdlimit"
 	"github.com/meshplus/bitxhub-kit/types"
 	"github.com/meshplus/bitxhub/internal/executor"
 	"github.com/meshplus/bitxhub/internal/ledger"
@@ -19,9 +17,11 @@ import (
 	"github.com/meshplus/bitxhub/internal/storages"
 	"github.com/meshplus/bitxhub/pkg/order"
 	"github.com/meshplus/bitxhub/pkg/order/etcdraft"
-	"github.com/meshplus/bitxhub/pkg/order/mempool"
 	"github.com/meshplus/bitxhub/pkg/peermgr"
 	"github.com/meshplus/bitxhub/pkg/storage/leveldb"
+
+	"github.com/common-nighthawk/go-figure"
+	"github.com/ethereum/go-ethereum/common/fdlimit"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,7 +31,6 @@ type BitXHub struct {
 	ViewExecutor  executor.Executor
 	Router        router.Router
 	Order         order.Order
-	MemPool       mempool.MemPool
 	PeerMgr       peermgr.PeerManager
 
 	repo   *repo.Repo
@@ -146,10 +145,6 @@ func generateBitXHubWithoutOrder(rep *repo.Repo) (*BitXHub, error) {
 			return nil, fmt.Errorf("create peer manager: %w", err)
 		}
 	}
-
-	// create mempool instance
-	mp := mempool.New()
-
 	return &BitXHub{
 		repo:          rep,
 		logger:        logger,
@@ -157,7 +152,6 @@ func generateBitXHubWithoutOrder(rep *repo.Repo) (*BitXHub, error) {
 		BlockExecutor: txExec,
 		ViewExecutor:  viewExec,
 		PeerMgr:       peerMgr,
-		MemPool:       mp,
 	}, nil
 }
 
