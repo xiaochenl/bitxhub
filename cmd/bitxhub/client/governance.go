@@ -383,6 +383,7 @@ func invokeBVMContract(ctx *cli.Context, contractAddr string, method string, arg
 
 	var data []byte
 	if err = retry.Retry(func(attempt uint) error {
+		time.Sleep(1000 * time.Millisecond)
 		data, err = getTxReceipt(ctx, hash)
 		if err != nil {
 			fmt.Println("get transaction receipt error: " + err.Error() + "... retry later")
