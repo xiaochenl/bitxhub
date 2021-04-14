@@ -15,6 +15,6 @@ jobs:
       - name: Ding Talk PR Notify
         uses: lijinke666/ding-talk-pr-notify@main
         with:
-          ding_talk_token: "https://oapi.dingtalk.com/robot/send?access_token=ef4d78e064aff87ee824d37b777e544b82c2435f1bf5c9d085659a31efbf3855"
+          ding_talk_token: "ef4d78e064aff87ee824d37b777e544b82c2435f1bf5c9d085659a31efbf3855"
           repo_url: "https://github.com/xiaochenl/bitxhub/pull"
           at_all: false
