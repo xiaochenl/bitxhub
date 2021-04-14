@@ -21,3 +21,5 @@ jobs:
         with:
           ding_talk_token: ${{ secrets.DING_TALK_ACCESS_TOKEN }}
           at_all: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
